@@ -4,23 +4,53 @@
 #include <stdbool.h>
 #define avarage_size 8
 
-volatile uint32_t old_delta_t;
-volatile uint32_t new_delta_t;
-volatile uint8_t is_new_data;
 
-// init function
-//timer input capture interrupt rutin
-// timer owerflow rutin
-// while loop
+volatile uint16_t SpikeTimerValue;
+volatile bool SpikeFlag = false;
 
 
-//      moving avarage --> circle puffer
-uint32_t delta_t_values[avarage_size];
-uint8_t array_index = 0;
-uint32_t delta_t_sum = 0;
-uint8_t puffer_is_full = 0;
-uint32_t avarage_delta_t = 0;
+//puffer adatok
+uint16_t puffer[8];
+uint8_t puffer_index;
+uint32_t running_avarage;
 
+
+// SYNC fazis flages es valtozok
+bool SYNC_Starting = true;
+uint16_t SYNC_previousT;
+//uint16_t SYNC_presentT;
+// lokalis valtozo az ido atmeneti tarolasara
+uint16_t SYNC_localT;
+uint16_t SYNC_deltaT;
+
+
+
+
+typedef enum{
+    SYNC = 1,
+    /*
+     feladat: megtalalni a legelso tiszta tusket a zajban
+     ha jon egy tuske meg kell nezni hogy mennyi ido telt el az elozo es az uj ota
+     ha tobb mint 80ms akkor valoszinuleg egy uj valid tuske nem pedig egy viszhang vagy egy random zaj
+     ha validnak talalta az algoritmus akkor a state BLANK_PERIOD LESZ
+     */
+    BLANK_PERIOD,// mute ACSR |= (1 << ACD); unmute ACSR &= ~(1 << ACD);
+    WAITING_FOR_NEW_SPIKE,
+    PROCESSSING,
+} State;
+
+State GlobalState = SYNC;
+
+
+
+ISR(TIMER1_CAPT_vect){
+    //timer érték mentése
+    SpikeTimerValue = ICR1;
+    // új tüske jelzése, tüske utáni jelérzékelés tiltásának állapota
+    SpikeFlag = true;
+    // timer megszakitas tiltasa
+    TIMSK1 &= ~(1 << ICIE1);
+}
 
 void SetupTimer(){
 /*
@@ -42,16 +72,6 @@ void SetupTimer(){
  */
  TCCR1B |= (1<<CS12);
  /*
-
-
-
-
-
- TCCR1C --> default 0
- TCNT1 --> default 0
- OCR1 --> default 0
- ICR1 --> default 0
-
  TIMSK1 (timer/counter interrupt mask register)
 
 
@@ -59,15 +79,9 @@ void SetupTimer(){
  -      -     ICIE1     -       -     OCIE1B  OCIE1A  TOIE1
  0      0       1       0       0       0       0       0
  (icie1 input capture interrupt enable, )
-
  */
-
  TIMSK1 |= (1<<ICIE1);
-
  /*
-
- TIFR1 --> default 0 a hw kezeli
-
  ICR1 --> csak olvasni, itt van az input capture értéke
 
 
@@ -98,12 +112,7 @@ Idő(milisec) = timerérték x 0.016
  // Ezt az értéket már ki is küldheted a Serial Monitorra!
  // Ki fogja írni: "166.65 ms"
  --------------------------------------------------------------
-
-
-
  */
-
-
 }
 
 void SetupComp(){
@@ -139,63 +148,66 @@ DIDR1 (digital input disable register)
 
  DIDR1 |= (1<<AIN1D);
  DIDR1 |= (1<<AIN0D);
+}
 
-
-
+void Setup(){
 
 }
-/*
+
 int main(){
-    //moving avarage FIFO init phase
-    while(puffer_is_full == 0){
+    //hw setup
+    SetupTimer();
+    SetupComp();
 
-        // need more functions from the normal while loop
-        // need to calculate the seperate while loop and if statement process needs
-
-
-        if(is_new_data == 1){
-            delta_t_values[array_index] = new_delta_t;
-            delta_t_sum = delta_t_sum + new_delta_t;
-            if(array_index == 7){
-                array_index = 0;
-                puffer_is_full = 1;
-            }
-            else{
-                array_index++;
-            }
-        }
-
-    }
     while(true){
+        switch(GlobalState){
+            // SYNC fázis
+            case SYNC:
+                //ha van uj tuske
+                if(SpikeFlag){
+                    cli();
+                    // timer lokalis valtozoba pakolasa
+                    SYNC_localT = SpikeTimerValue;
+                    sei();
 
-        if(is_new_data == 1){
+                    // uj tuske jelzeseneke hamisba allitasa
+                    SpikeFlag = false;
 
-        // moving avarage logic in the true part of the if statement of the new value
+                    if(SYNC_Starting){
+                        //init fazisban van a rendszer, meg nem tud deltaT-t szamolni
+                        SYNC_previousT = SYNC_localT;
+                        SYNC_Starting  = false;
+                        GlobalState = BLANK_PERIOD;
+                    }
+                    else{
+                        // ket utes kozotti ido - meg nem biztos hogy valid utes
+                        SYNC_deltaT = SYNC_localT - SYNC_previousT;
 
-        //Refreshing the FIFO with the new value and adjusting the sum
-        delta_t_sum = delta_t_sum - delta_t_values[array_index];
-        delta_t_sum = delta_t_sum + new_delta_t;
-        delta_t_values[array_index] = new_delta_t;
-        if(array_index == 7){
-            array_index = 0;
+                        //deltaT validalas
+                        // ora delta ido ms ben
+                        // min: 80ms max: 320ms - ezekre mar ra lett szamitva hibahatar
+                        // 1 timer lepes 0.016 ms
+                        // 80ms = 5000 timer lepes
+                        // 320ms = 20000 timer lepes
+
+
+                        if(SYNC_deltaT > 5000 && SYNC_deltaT < 20000){
+                            //todo korpuffer vagy feldolgozo fazisnak tovabbitani deltaT erteket
+                            SYNC_previousT = SYNC_localT;
+                            GlobalState = BLANK_PERIOD;
+                        }
+                        else{
+                            GlobalState = BLANK_PERIOD;
+                        }
+                    }
+                }
+            case BLANK_PERIOD:
+
         }
-        else{
-            array_index++;
-        }
-
-        //adjusting the avarage (>>3 is the equivalent of /8 in the number system 2)
-        avarage_delta_t = delta_t_sum >>3;
-
-
-
-
-        }
-
-
-
     }
+
 }
-*/
+
 //      usart communication
 //
 //
