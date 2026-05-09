@@ -2,9 +2,29 @@
 #include <avr/interrupt.h>
 #include <stdint.h>
 #include <stdbool.h>
-#define avarage_size 8
+
+// LCD es I2C makrok
+/*
+ I2C csomag bitek lcd funkcio szerint:
+
+ bit 7,6,5,4 adat bitek
+ bit 3 hattervilagitas ==> 1 vilagit, 0 nem
+ bit 2 enable ==> lcd-nek jelzes hogy olvassa be a biteket
+ bit 1 read/wrie  ==> mivel csak irni akarunk mindig 0
+ bit 0 register select ==> 0 akkor parancs, 1 akkor karakter
+ */
+
+ #define LCD_ADDR (0x27<<1)
+ //PCF8574T kiosztas
+ #define LCD_BACKLIGHT 0x08  // Bit 3 (0b00001000)
+ #define LCD_ENABLE    0x04  // Bit 2 (0b00000100)
+ #define LCD_RW        0x02  // Bit 1 (0b00000010)
+ #define LCD_RS        0x01  // Bit 0 (0b00000001)
+
+ #define HIGH_NIBLE_MASK 0xF0 // (0b11110000)
 
 
+// globalis allapot jelzok megszakitashoz
 volatile uint16_t SpikeTimerValue;
 volatile bool SpikeFlag = false;
 
@@ -16,6 +36,7 @@ uint32_t running_sum = 0;
 bool PufferIsFull = false;
 
 
+//statisztikai adatok
 uint16_t Avarage_deltaT;
 uint16_t Bph;
 
@@ -189,10 +210,70 @@ void I2C_write(uint8_t data){
 
 }
 
+
 void I2C_stop(){
     //stop jel
     TWCR = (1<<TWSTO) | (1<<TWINT) | (1<<TWEN);
 }
+
+//LCD uzenet pipeline: lcd write(alap irasi jelek es adat kuldes) --> lcd pulse enable (ketszer hivja meg a writot az enable bit miatt)
+//--> lcd send byte(kette szedi 4 bytera, ketszer hivja meg a pulse enablet)
+
+//LCD driverek I2C kapcsolattal
+void LCD_Write_I2C(uint8_t data){
+    I2C_start();
+    // eloszor cimezuk
+    I2C_write(LCD_ADDR);
+    // cimzes utan adat kuldese
+    LCD_Write_I2C(data);
+    // stop jel kiadasa
+    I2C_stop();
+}
+
+void LCD_PulseEnable(uint8_t data){
+
+    //adata  kuldes enable bit nelkul
+    LCD_Write_I2C(data | LCD_ENABLE);
+
+    // adata kuldesse enable bit kapcsolasaval (0 ra kapcsolas mert alacsony aktiv)
+    LCD_Write_I2C(data & ~LCD_ENABLE);
+}
+
+void LCD_SendByte(uint8_t data, uint8_t mode){
+    // felso 4 bit kiszurese --> also 4 bit lenullazasa
+    uint8_t high_nible = data & HIGH_NIBLE_MASK;
+    // also 4 bit kiszurese --> felso 4 bit kinullazasa
+    // ballra toljul 4 el es maskoljuk akkor az also negy bitet kapjuk meg a felso negy bit helyen
+    uint8_t low_nible = (data<<4) & HIGH_NIBLE_MASK;
+
+    //ha karakter akkor 1, ha 0 akkor parancs
+    uint8_t rs_bit = 0;
+    if(mode == 1){
+        rs_bit = LCD_RS;
+    }
+
+
+    // adat felso 4 bajtjanak kuldese
+    LCD_PulseEnable(high_nible | LCD_BACKLIGHT | rs_bit);
+    //adat also 4 bajtjanak kuldese
+    LCD_PulseEnable(low_nible | LCD_BACKLIGHT | rs_bit);
+}
+
+//LCD felhasznaloi fugvenyek
+void LCD_SendCommand(uint8_t cmd){
+    LCD_SendByte(cmd, 0);
+}
+
+void LCD_SendChar(char c){
+    LCD_SendByte(c, 1);
+}
+
+void LCD_PrintString(const char* str){
+     while( *str ){
+         LCD_SendChar( *str++ );
+     }
+}
+
 
 
 
