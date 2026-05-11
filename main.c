@@ -15,6 +15,8 @@
 //======================================
 volatile uint16_t SpikeTimerValue;
 volatile bool SpikeFlag = false;
+volatile float Actual_tick_us = 16.0; // egy timer lepes hossza mikroszekundumban, ezt kesobb valtoztatja a kulso ora modul
+volatile uint16_t DS3231_prev_tcnt = 0; // az adott masodperc elotti a kulso orajel megerkeztekor levo timer ertek
 
 
 //===================================
@@ -78,7 +80,27 @@ ISR(TIMER1_CAPT_vect){
 
 }
 
+//================================================
+//D2 LABON LEVO MEGSZAKITASA A KULSO ORA MODULNAK
+//================================================
 
+ISR(INT0_vect){
+
+
+    uint16_t current_tcnt = TCNT1; // timer erteke eppen hol tart
+
+    uint16_t diff =  current_tcnt - DS3231_prev_tcnt; // a ket timer ertek kozotti kulonbseg, ennyit lepett a timer pontosan 1s alatt
+    DS3231_prev_tcnt = current_tcnt;
+
+    // ha nagyon elutne akkor nem vesszuk figyelembe
+    // idealis esetben 62500 ilyenkor pontosan annyit lepett mint ellotte
+    if(diff > 60000 && diff < 65000 ){
+        //kiszamoljuk a timer tenyleges lepeshosszat mikroszekundumban
+        Actual_tick_us = 1000000.0 / diff;
+
+    }
+
+}
 
 
 int main(){
@@ -220,7 +242,7 @@ int main(){
                     //===========================================
 
                     Average_deltaT = running_sum >> 3; // korpuffer altal kezelt runing sum osztasa 8-al, shifteleses megoldassal
-                    Average_deltaT_us = Average_deltaT * 16;  // az atlag elteres idore valtasa timer lepesrol
+                    Average_deltaT_us = Average_deltaT * Actual_tick_us;  // az atlag elteres idore valtasa timer lepesrol
 
                     //napi atlag elteres szamitasa:
                     // ((gyari referencia idokoz - sajat atlagolt idokoz)/ gyari referencia idokoz) * egy nap masodpercekben

@@ -84,3 +84,10 @@ DIDR1 (digital input disable register)
  DIDR1 |= (1<<AIN1D);
  DIDR1 |= (1<<AIN0D);
 }
+
+void SetupDS3231(){
+
+    // az ora modult a D2 lábra kötöttük be
+    EICRA |= (1 << ISC01); // megszakitas lefuto elre lesz
+    EIMSK |= (1 << INT0); // megszakitas engedelyezese
+}

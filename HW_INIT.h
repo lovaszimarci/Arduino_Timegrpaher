@@ -3,5 +3,6 @@
 
 void SetupTimer(void);
 void SetupComp(void);
+void SetupDS3231(void);
 
 #endif
