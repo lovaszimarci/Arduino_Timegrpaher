@@ -30,7 +30,7 @@ bool PufferIsFull = false; // a kezdeti fazis jelzesehez hasznalt valtozo, true 
 //STATISZTIKAI ADATOK VALTOZOINAK INICIALIZALAS
 //=============================================
 
-#define AVERAGE_COUNT 12 // 12 utesenkent kuldi ki a program az lcd-re az infot
+#define AVERAGE_COUNT 8 // 12 utesenkent kuldi ki a program az lcd-re az infot
 uint8_t tick_count = 0;
 
 uint32_t Average_deltaT; // a meresbol szamolt atlag delta t ertek timer lepesben
@@ -141,12 +141,16 @@ int main(){
                                     // ha nagyon keson jott utana akkor megint vagy zaj vagy levettek az orat
 
                         if(SYNC_deltaT > 5000 && SYNC_deltaT < 20000){ // idobeli hatarok ellenorzese delta t ertekre
-                            // VALID UTES
-                            SYNC_previousT = SYNC_localT;  //
+                            //=========================
+                            //VALID IDOKULONBSEG
+                            //=========================
+                            SYNC_previousT = SYNC_localT;
                             GlobalState = PROCESSING;
                         }
                         else{
-                            // ERVENYTELEN UTES
+                            //========================
+                            //ERVENYTELEN IDOKULONBSEG
+                            //========================
                             if(SYNC_deltaT > 20000){
                                 // kihagyott egy utest a gep
                                 // kotelezo frissiteni az elozo utest hogy friss helyrol induljon
@@ -162,33 +166,36 @@ int main(){
                     }
                 }
                 break;
-////////////////////////////////////////////////////////////////////////////
+            //================================
+            //BLANK PERIOS FAZIS MEGVALOSITASA
+            //================================
             case BLANK_PERIOD:
 
-            //suket fazis elejenek ideje
-            cli();
-            uint16_t CurrentTime = TCNT1;
+            cli(); // timer ertek masolashoz letiltom a megszakitasokat
+            uint16_t CurrentTime = TCNT1; // a jelenlegi ido timer erteke
             sei();
 
-            uint16_t PassedTime = CurrentTime - SYNC_previousT;
+            uint16_t PassedTime = CurrentTime - SYNC_previousT; // eltelt ido szamitasa
 
             // 60ms =  3750 timer step
             if(PassedTime > 3750){
-                SpikeFlag = false;
-                // input capture flag torles
-                TIFR1 = (1<<ICF1);
-                //timer it ujra engedelyezes
-                TIMSK1 |= (1<<ICIE1);
 
-                GlobalState = SYNC;
+                SpikeFlag = false; // letorolhetjuk a hangtuske flagjet mert letelt az ido
+                TIFR1 = (1<<ICF1); // timer input capture flagjenek torlese regiszterbol
+                TIMSK1 |= (1<<ICIE1); // timer interupt ujraengedelyezese
+                GlobalState = SYNC; // vissza mehet a program sync allapotba
+
             }
             break;
 
-////////////////////////////////////////////////////////////////////////////
+            //==============================
+            //PROCESSING FAZIS MEGVALOSITASA
+            //==============================
+
             case PROCESSING:
 
-                //puffer init fazis
-                if(PufferIsFull == false){
+
+                if(PufferIsFull == false){ // puffer meg nincs tele, feltolto folyamat kezelese
                     puffer[puffer_index] = SYNC_deltaT;
                     running_sum += SYNC_deltaT;
                     puffer_index += 1;
@@ -198,8 +205,8 @@ int main(){
                     }
                 }
                 else{
+                    // itt mar fel van toltve a korpuffer es csak frissiteni kell
 
-                    // korpuffer frissitese
                     running_sum -= puffer[puffer_index];
                     puffer[puffer_index] = SYNC_deltaT;
                     running_sum += SYNC_deltaT;
@@ -211,18 +218,15 @@ int main(){
                     //===========================================
                     // NAPI ELTERES SZAMITAS
                     //===========================================
-                    // atlag delta t
-                    Average_deltaT = running_sum >> 3;
-                    Average_deltaT_us = Average_deltaT * 16;
 
-                    //napi atlag elteres:
+                    Average_deltaT = running_sum >> 3; // korpuffer altal kezelt runing sum osztasa 8-al, shifteleses megoldassal
+                    Average_deltaT_us = Average_deltaT * 16;  // az atlag elteres idore valtasa timer lepesrol
+
+                    //napi atlag elteres szamitasa:
                     // ((gyari referencia idokoz - sajat atlagolt idokoz)/ gyari referencia idokoz) * egy nap masodpercekben
                     float Current_rate = ((Reference_deltaT_us - Average_deltaT_us)/Reference_deltaT_us)*86400.0;
 
-                    rate_sum += Current_rate;
-                    tick_count++;
-
-
+                    tick_count++; // noveljuk a kattanas szamolo erteket, 8 kattanasonkent iratunk ki
 
                     if(tick_count >= AVERAGE_COUNT){
 
@@ -239,19 +243,28 @@ int main(){
                         }
 
 
-                        float Average_rate = rate_sum / AVERAGE_COUNT;
-                        float Average_beat_error = (beat_error_sum / 7.0);
+                        float Average_rate = Current_rate; // az adott korpuffer atlag lesz a kiirando adat
+                        float Average_beat_error = (beat_error_sum / 7.0); // azert csak hettel osztunk mert a 8 elemu pufferben csak 7 hiba ertek van,
+                       // (matematikailag igy jon ki)
 
-                        char line1[17];
-                        char line2[17];
 
-                        char rate_str[10];
-                        dtostrf(Average_rate, 4, 1, rate_str);
+
+
+                       //================================================
+                       //ADATOK TOVABBITASA LCD KIJELZORE
+                       //================================================
+
+                        char line1[17]; // LCD kijelzo 1. soranak puffere
+                        char line2[17]; // LCD kijelzo 2.  soranak puffere
+
+                        char rate_str[10]; // atmeneti puffer
+                        dtostrf(Average_rate, 4, 1, rate_str); // mivel a sima sprintf uC-n nem tud float erteket stringe konvertalni,
+                        //ezert egy direkt uC-re kifejlesztett fugvennyel helyettesitettem
 
                         char beat_error_str[10];
                         dtostrf(Average_beat_error, 3, 1, beat_error_str);
 
-                        char plusminus = (Average_rate >= 0) ? '+' : '\0';
+                        char plusminus = (Average_rate >= 0) ? '+' : '\0'; // napi elteres elojelenek meghatarozasa
                         sprintf(line1, "Rate:%c%s s/d", plusminus, rate_str);
 
                         sprintf(line2, "B.err: %s ms", beat_error_str);
@@ -259,7 +272,7 @@ int main(){
 
 
                         //LCD kiiras
-
+                        // (az lcd fugvenyek leirasi az adott header fajlban kommmentben szerepelnek)
                         LCD_SetCursor(0, 0);
                         LCD_PrintString(line1);
                         LCD_SetCursor(1, 0);
@@ -267,7 +280,6 @@ int main(){
 
                         //nullazas
                         tick_count = 0;
-                        rate_sum = 0.0;
                         beat_error_sum = 0.0;
 
                     }
