@@ -1,8 +1,9 @@
 #include "HW_INIT.h"
 #include <avr/io.h>
 
-
-
+//====================================
+//TIMER FELPROGRAMOZASA
+//====================================
 
 void SetupTimer(){
 /*
@@ -45,26 +46,7 @@ prescale = 256
 1 timer lépés = 0,000016s = 0.016 milisec = 16 mikrosec
 
 Tmax = 65536 x 0.000016s = 1.048576s
-
-Valós idő kiszámítása timer értékből
-
-Idő(milisec) = timerérték x 0.016
- TCCR1C (timer/counter control register c)
-
- // Tegyük fel, hogy az algoritmusod kiszámolta a két tüske közötti különbséget:
- uint16_t timer_lepesek = 10416; // (Ez csak egy példa érték)
-
- // 1. Lépés: Átváltás mikroszekundumba (Biztonságos, 32-bites egész számmal)
- // A 32 bit (uint32_t) azért kell, mert 65535 * 16 már nem férne el 16 biten!
- uint32_t eltelt_ido_us = (uint32_t)timer_lepesek * 16;
-
- // 2. Lépés: Átváltás milliszekundumba (Itt már jöhet a tört szám, azaz a float)
- float eltelt_ido_ms = (float)eltelt_ido_us / 1000.0;
-
- // Ezt az értéket már ki is küldheted a Serial Monitorra!
- // Ki fogja írni: "166.65 ms"
- --------------------------------------------------------------
- */
+*/
 }
 
 

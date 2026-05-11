@@ -1,5 +1,5 @@
- #ifndef LCD_I2C_H  // Ha még nincs definiálva...
- #define LCD_I2C_H  // ...akkor most definiáljuk!
+ #ifndef LCD_I2C_H
+ #define LCD_I2C_H
 
  #include <stdint.h>
 
@@ -20,6 +20,7 @@
  #define LCD_RW        0x02  // Bit 1 (0b00000010)
  #define LCD_RS        0x01  // Bit 0 (0b00000001)
 
+ //mivel 2db 4 bites adatot kuld egy 8 bites adathoz ezert szet kell valasztani a 8 bitet, ehhez kell a maszk
  #define HIGH_NIBLE_MASK 0xF0 // (0b11110000)
 
 
@@ -30,7 +31,6 @@
  void I2C_stop(void);
 
  //lcd vezerlok
-
  void LCD_Init(void);
  void LCD_SendCommand(uint8_t cmd);
  void LCD_SendChar(char c);

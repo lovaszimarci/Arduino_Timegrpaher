@@ -2,17 +2,21 @@
 #include <avr/io.h>
 #include <util/delay.h>
 
-// I2C alap fugvenyek
+//=======================
+//I2C ALAPFÜGGVÉNYEK
+//=======================
+
+// az i2c kommunikaci tulajdonsagainak beallitasa
 void I2C_init(){
-    // clk sebesseg
     // clk speed ==> 100kHz
     // keplet: scl = CPU clock speed/ 16+2(TWBR) + (Prescaler value)
     // 100kHz ==> 16 000 000/ 16+2(72) + 0
     TWBR = 72;
-    TWSR = 0x00; // twps1, twps0 ==> 0, a tobbi read only
+    TWSR = 0x00; // twps1, twps0 ==> 0,0 a tobbi read only
     TWCR = (1 << TWEN); // enable bit
 }
 
+// start procedura
 void I2C_start(){
     TWCR = (1<<TWINT); // interrupt flag letorlese
     TWCR = (1<<TWSTA); // start jel a slaveknek a buszon
@@ -22,6 +26,7 @@ void I2C_start(){
     while(!(TWCR &(1<<TWINT)));
 }
 
+//adat kuldese
 void I2C_write(uint8_t data){
     TWDR = data; // adat atadas a data registernek
 
@@ -34,28 +39,30 @@ void I2C_write(uint8_t data){
 
 }
 
+//kommunikacio vegenek jelzese
 void I2C_stop(){
     //stop jel
     TWCR = (1<<TWSTO) | (1<<TWINT) | (1<<TWEN);
 }
 
 
-//LCD uzenet pipeline: lcd write(alap irasi jelek es adat kuldes) --> lcd pulse enable (ketszer hivja meg a writot az enable bit miatt)
-//--> lcd send byte(kette szedi 4 bytera, ketszer hivja meg a pulse enablet)
+//==============================================
+//LCD SPECIFIKUS PARANCSOK MEGVALOSITASA I2C-VEL
+//==============================================
 
-//LCD driverek I2C kapcsolattal
+
 void LCD_Write_I2C(uint8_t data){
 
-    I2C_start();
-    // eloszor cimezuk
-    I2C_write(LCD_ADDR);
-    // cimzes utan adat kuldese
-    I2C_write(data);
-    // stop jel kiadasa
-    I2C_stop();
+    I2C_start(); // kommunikacio elkezdese
+    I2C_write(LCD_ADDR);  // eloszor cimezuk
+    I2C_write(data);// cimzes utan adat kuldese
+    I2C_stop(); // stop jel kiadasa
 }
 
 void LCD_PulseEnable(uint8_t data){
+
+    //mivel az lcd-re kulsoleg van rateve az i2c modul ezert muszaj ketszer kuldeni az adatot hogy jo orajelnel olvassa ki
+    // az lcd az adat regisztert es eljusson normalisan az informacio
 
     //adata  kuldes enable bit nelkul
     LCD_Write_I2C(data | LCD_ENABLE);
@@ -65,8 +72,12 @@ void LCD_PulseEnable(uint8_t data){
 }
 
 void LCD_SendByte(uint8_t data, uint8_t mode){
+
+    //mivel az lcd kijelzo 4 bites modba van hasznalva ezert szet kell bontani az adatokat es ket reszben kuldeni
+
     // felso 4 bit kiszurese --> also 4 bit lenullazasa
     uint8_t high_nible = data & HIGH_NIBLE_MASK;
+
     // also 4 bit kiszurese --> felso 4 bit kinullazasa
     // ballra toljul 4 el es maskoljuk akkor az also negy bitet kapjuk meg a felso negy bit helyen
     uint8_t low_nible = (data<<4) & HIGH_NIBLE_MASK;
@@ -77,22 +88,29 @@ void LCD_SendByte(uint8_t data, uint8_t mode){
         rs_bit = LCD_RS;
     }
 
-
     // adat felso 4 bajtjanak kuldese
     LCD_PulseEnable(high_nible | LCD_BACKLIGHT | rs_bit);
     //adat also 4 bajtjanak kuldese
     LCD_PulseEnable(low_nible | LCD_BACKLIGHT | rs_bit);
 }
 
-//LCD felhasznaloi fugvenyek
+
+//===========================================
+//A FELHASZNALO ALTAL HASZNALT LCD PARANCSOK
+//===========================================
+
+
+// LCD parancs kuldese
 void LCD_SendCommand(uint8_t cmd){
     LCD_SendByte(cmd, 0);
 }
 
+// Karakter kuldese a kijelzore
 void LCD_SendChar(char c){
     LCD_SendByte(c, 1);
 }
 
+//String kuldese a kijelzore
 void LCD_PrintString(const char* str){
      while( *str ){
          LCD_SendChar( *str++ );
@@ -100,6 +118,9 @@ void LCD_PrintString(const char* str){
 }
 
 
+//=================================================
+//LCD KIJELZO BEKAPCSOLASAHOZ HASZNALT INIT FUGVENY
+//=================================================
 
 void LCD_Init(){
 
@@ -154,11 +175,13 @@ void LCD_Init(){
 
 
 //LCD kurzor mozgatasa
-// 1. sor cime: 0x00
-// 2. sor cime: 0x40
-// kurzor mozgato parancs: 0x80
-// pl masodik sorba mozgatas: 0x80 + 0x40 = 0xC0
 void LCD_SetCursor(uint8_t row, uint8_t col){
+
+    // 1. sor cime: 0x00
+    // 2. sor cime: 0x40
+    // kurzor mozgato parancs: 0x80
+    // pl masodik sorba mozgatas: 0x80 + 0x40 = 0xC0
+
     uint8_t addres;
     if(row == 0){
         addres = 0x80 + col;
